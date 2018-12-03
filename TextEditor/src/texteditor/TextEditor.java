@@ -22,6 +22,7 @@ public class TextEditor {
     private int offsetStart = 0;
     private int offsetEnd = 0;
     private long documentRevision = 0;
+    private int chunksSent = 0;
     
     private void clearOffsets() {
         offsetStart = 0;
@@ -50,6 +51,7 @@ public class TextEditor {
                 end = Math.min(end, offsetEnd);
             }
             
+            chunksSent = Math.max(0, end - start - 1) / 5000 + 1;
             do {
                 out.writeLong(documentRevision);
                 out.writeInt(start);
@@ -177,7 +179,10 @@ public class TextEditor {
             // We've already sent another request.
             return;
         }
-        clearOffsets();
+        --chunksSent;
+        if (chunksSent == 0) {
+            clearOffsets();
+        }
         StyleContext sc = StyleContext.getDefaultStyleContext();
         AttributeSet as = text.getCharacterAttributes();
         for (int i = 0; i < colors.length / 3; ++i) {
@@ -201,8 +206,9 @@ public class TextEditor {
             System.out.println("Failed to run the server, no colors. ex = " + ex.getMessage());
         }
         try {
-            if (clientSocket != null)
+            if (clientSocket != null) {
                 clientSocket.close();
+            }
             clientSocket = serverSocket.accept();
             out = new DataOutputStream(clientSocket.getOutputStream());
             in = new DataInputStream(clientSocket.getInputStream());

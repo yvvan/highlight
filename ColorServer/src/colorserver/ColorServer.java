@@ -38,8 +38,9 @@ public class ColorServer {
     private void makeRequest(long revision, int start, String text) {
         byte result[] = new byte[text.length() * 3];
         requestColors(revision, text, result);
-        if (revision < currentRevision.get())
+        if (revision < currentRevision.get()) {
             return;
+        }
         synchronized(this) {
             try {
                 out.writeLong(revision);
@@ -55,8 +56,9 @@ public class ColorServer {
     
     public void start() {
         while (!connect("127.0.0.1", 6000)) {}
-        if (!initStreams())
+        if (!initStreams()) {
             return;
+        }
         ExecutorService pool = Executors.newFixedThreadPool(4);
 
         while (clientSocket.isConnected()) {
