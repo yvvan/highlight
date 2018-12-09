@@ -2,6 +2,7 @@ package colorserver;
 
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
+import java.util.Vector;
 import java.net.*;
 import java.io.*;
 
@@ -9,12 +10,18 @@ public class ColorServer {
     static {
         System.loadLibrary("libColor");
     }
-    
+
     private Socket clientSocket;
     private DataOutputStream out;
     private DataInputStream in;
-    private AtomicLong currentRevision = new AtomicLong(0);
-    
+    private Vector<String> documentPaths;
+    private Vector<AtomicLong> currentRevisions;
+
+    public ColorServer() {
+        this.currentRevisions = new Vector<AtomicLong>();
+        this.documentPaths = new Vector<String>();
+    }
+
     boolean connect(String ip, int port) {
         try {
             clientSocket = new Socket(ip, port);
@@ -23,7 +30,7 @@ public class ColorServer {
             return false;
         }
     }
-    
+
     private boolean initStreams() {
         try {
             out = new DataOutputStream(clientSocket.getOutputStream());
@@ -34,15 +41,16 @@ public class ColorServer {
         }
         return true;
     }
-    
-    private void makeRequest(long revision, int start, String text) {
+
+    private void makeRequest(int index, long revision, int start, String text) {
         byte result[] = new byte[text.length() * 3];
         requestColors(revision, text, result);
-        if (revision < currentRevision.get()) {
+        if (revision < currentRevisions.elementAt(index).get()) {
             return;
         }
         synchronized(this) {
             try {
+                out.writeUTF(documentPaths.elementAt(index));
                 out.writeLong(revision);
                 out.writeInt(start);
                 out.writeInt(result.length);
@@ -53,7 +61,7 @@ public class ColorServer {
             }
         }
     }
-    
+
     public void start() {
         while (!connect("127.0.0.1", 6000)) {}
         if (!initStreams()) {
@@ -63,9 +71,18 @@ public class ColorServer {
 
         while (clientSocket.isConnected()) {
             int start;
+            int index;
             String text;
             try {
-                currentRevision.set(in.readLong());
+                String documentPath = in.readUTF();
+                index = documentPaths.indexOf(documentPath);
+                if (index < 0) {
+                    documentPaths.addElement(documentPath);
+                    currentRevisions.addElement(new AtomicLong(in.readLong()));
+                    index = currentRevisions.size() - 1;
+                } else {
+                    currentRevisions.elementAt(index).set(in.readLong());
+                }
                 start = in.readInt();
                 text = in.readUTF();
             } catch (IOException ex) {
@@ -73,31 +90,32 @@ public class ColorServer {
                 return;
             }
 
-            final long r = currentRevision.get();
+            final long r = currentRevisions.elementAt(index).get();
+            final int i = index;
             updateRevision(r);
             pool.execute(() -> {
-                makeRequest(r, start, text);
+                makeRequest(i, r, start, text);
             });
         }
         pool.shutdown();
         stopConnection();
     }
- 
+
     public void stopConnection() {
         try {
             in.close();
             out.close();
             clientSocket.close();
-        } catch (Exception ex) {
+        } catch (IOException ex) {
             System.out.println("Closing connection failed, ex = " + ex.getMessage());
         }
     }
-    
+
     private static native void requestColors(long revision, String text, byte[] result);
     private static native void updateRevision(long revision);
-    
+
     public static void main(String[] args) {
         new ColorServer().start();
     }
-    
+
 }

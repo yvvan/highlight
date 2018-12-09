@@ -3,6 +3,7 @@ package texteditor;
 import java.awt.Color;
 import java.awt.event.WindowEvent;
 import java.awt.event.WindowListener;
+import java.util.ArrayList;
 import javax.swing.*;
 import javax.swing.event.*;
 import javax.swing.text.*;
@@ -11,24 +12,53 @@ import java.net.*;
 import java.io.*;
 
 public class TextEditor {
-    private ServerSocket serverSocket;
-    private Socket clientSocket;
-    private DataOutputStream out;
-    private DataInputStream in;
+    private static ServerSocket serverSocket;
+    private static Socket clientSocket;
+    private static DataOutputStream out;
+    private static DataInputStream in;
+    private static boolean opened = true;
+    private static Process colorServer;
+    private static ArrayList<TextEditor> editors = new ArrayList<TextEditor>();
+
     private JTextPane text;
-    private Process colorServer;
-    private boolean opened = true;
-    
+    private String filePath;
     private int offsetStart = 0;
     private int offsetEnd = 0;
     private long documentRevision = 0;
     private int chunksSent = 0;
-    
+
+    public TextEditor(JFrame frame, String path) {
+        JTabbedPane tabbedPane = new JTabbedPane();
+        text = new JTextPane();
+        filePath = path;
+        JScrollPane jsp = new JScrollPane(text);
+        frame.add(tabbedPane);
+        tabbedPane.addTab(path, jsp);
+
+        text.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                ++documentRevision;
+                mergeOffsets(e.getOffset(), e.getOffset() + e.getLength());
+                sendRequest();
+            }
+
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                ++documentRevision;
+                mergeOffsets(e.getOffset(), e.getOffset() + e.getLength());
+                sendRequest();
+            }
+
+            @Override public void changedUpdate(DocumentEvent arg0) {}
+        });
+    }
+
     private void clearOffsets() {
         offsetStart = 0;
         offsetEnd = 0;
     }
-    
+
     private void mergeOffsets(int start, int end) {
         if (offsetEnd == 0) {
             offsetStart = start;
@@ -38,7 +68,7 @@ public class TextEditor {
         offsetStart = Math.min(offsetStart, start);
         offsetEnd = Math.max(offsetEnd, end);
     }
-    
+
     private void sendRequest() {
         if (!opened) {
             return;
@@ -50,28 +80,31 @@ public class TextEditor {
                 start = offsetStart;
                 end = Math.min(end, offsetEnd);
             }
-            
+
             chunksSent = Math.max(0, end - start - 1) / 5000 + 1;
             do {
+                out.writeUTF(filePath);
                 out.writeLong(documentRevision);
                 out.writeInt(start);
                 out.writeUTF(text.getDocument().getText(start, Math.min(5000, end - start)));
                 start += 5000;
             } while (end - start > 5000);
-        } catch (Exception ex) {
+        } catch (IOException | BadLocationException ex) {
             System.out.println("Error sending request, retry. ex = " + ex.getMessage());
             SwingUtilities.invokeLater(() -> { sendRequest(); });
         }
     }
-    
-    private class ReadingRunnable implements Runnable {
+
+    private static class ReadingRunnable implements Runnable {
         @Override
         public void run() {
             while(opened) {
-                int bufferSize = 0;
-                int start = 0;
-                long revision = 0;
+                int bufferSize;
+                int start;
+                long revision;
                 try {
+                    // fileName is not used for now
+                    String fileName = in.readUTF();
                     revision = in.readLong();
                     start = in.readInt();
                     bufferSize = in.readInt();
@@ -79,7 +112,7 @@ public class TextEditor {
                     System.out.println("Can't read the header, restart" + ex.getMessage());
                     SwingUtilities.invokeLater(() -> {
                         launchColorServer();
-                        sendRequest();
+                        editors.get(0).sendRequest();
                     });
                     continue;
                 }
@@ -94,85 +127,20 @@ public class TextEditor {
                     System.out.println("Can't read buffer, restart: " + ex.getMessage());
                     SwingUtilities.invokeLater(() -> {
                         launchColorServer();
-                        sendRequest();
+                        editors.get(0).sendRequest();
                     });
                     continue;
                 }
-                
+
                 final int startFinal = start;
                 final long revisionFinal = revision;
                 SwingUtilities.invokeLater(() -> {
-                    updateColors(revisionFinal, startFinal, buffer);
+                    editors.get(0).updateColors(revisionFinal, startFinal, buffer);
                 });
             }
         }
     }
-    
-    public void start() {
-        JFrame frame = new JFrame("test window");
-        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
-        text = new JTextPane();
-        JScrollPane jsp = new JScrollPane(text);
-        
-        frame.add(jsp);
-
-        frame.setSize(800, 600);
-        frame.setVisible(true);
-        
-        text.getDocument().addDocumentListener(new DocumentListener() {
-            @Override
-            public void removeUpdate(DocumentEvent e) {
-                ++documentRevision;
-                mergeOffsets(e.getOffset(), e.getOffset() + e.getLength());
-                sendRequest();
-            }
-
-            @Override
-            public void insertUpdate(DocumentEvent e) {
-                ++documentRevision;
-                mergeOffsets(e.getOffset(), e.getOffset() + e.getLength());               
-                sendRequest();
-            }
-            
-            @Override public void changedUpdate(DocumentEvent arg0) {}
-        });
-        
-        frame.addWindowListener(new WindowListener() {
-            @Override
-            public void windowClosing(WindowEvent e) {
-                opened = false;
-                try {
-                    in.close();
-                    out.close();
-                    clientSocket.close();
-                    serverSocket.close();
-                    colorServer.destroyForcibly();
-                } catch (Exception ex) {
-                    System.out.println(ex.getMessage());
-                    colorServer.destroyForcibly();
-                }
-            }
-            
-            @Override public void windowOpened(WindowEvent e) {}
-            @Override public void windowClosed(WindowEvent e) {}
-            @Override public void windowIconified(WindowEvent e) {}
-            @Override public void windowDeiconified(WindowEvent e) {}
-            @Override public void windowActivated(WindowEvent e) {}
-            @Override public void windowDeactivated(WindowEvent e) {}
-        });
-        
-        try {
-            serverSocket = new ServerSocket(6000); 
-        } catch (IOException ex) {
-            System.out.println("Can't open socket, exiting: " + ex.getMessage());
-            return;
-        }
-        launchColorServer();
-        
-        new Thread(new ReadingRunnable()).start();
-    }
-    
     // Must be called in Swing thread.
     void updateColors(long revision, int start, byte[] colors) {
         if (revision < documentRevision) {
@@ -193,8 +161,8 @@ public class TextEditor {
             text.getStyledDocument().setCharacterAttributes(start + i, 1, as, true);
         }
     }
-    
-    void launchColorServer() {
+
+    static void launchColorServer() {
         if (!opened) {
             return;
         }
@@ -212,12 +180,51 @@ public class TextEditor {
             clientSocket = serverSocket.accept();
             out = new DataOutputStream(clientSocket.getOutputStream());
             in = new DataInputStream(clientSocket.getInputStream());
-        } catch (Exception ex) {
+        } catch (IOException ex) {
             System.out.println("Failed to connect, no colors. ex = " + ex.getMessage());
         }
     }
-    
+
     public static void main(String[] args) {
-        new TextEditor().start();
+        JFrame frame = new JFrame("test window");
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        frame.setSize(800, 600);
+        frame.setVisible(true);
+
+        frame.addWindowListener(new WindowListener() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                opened = false;
+                try {
+                    in.close();
+                    out.close();
+                    clientSocket.close();
+                    serverSocket.close();
+                    colorServer.destroyForcibly();
+                } catch (IOException ex) {
+                    System.out.println(ex.getMessage());
+                    colorServer.destroyForcibly();
+                }
+            }
+
+            @Override public void windowOpened(WindowEvent e) {}
+            @Override public void windowClosed(WindowEvent e) {}
+            @Override public void windowIconified(WindowEvent e) {}
+            @Override public void windowDeiconified(WindowEvent e) {}
+            @Override public void windowActivated(WindowEvent e) {}
+            @Override public void windowDeactivated(WindowEvent e) {}
+        });
+
+        try {
+            serverSocket = new ServerSocket(6000);
+        } catch (IOException ex) {
+            System.out.println("Can't open socket, exiting: " + ex.getMessage());
+            return;
+        }
+        launchColorServer();
+
+        new Thread(new ReadingRunnable()).start();
+
+        editors.add(new TextEditor(frame, "path"));
     }
 }
