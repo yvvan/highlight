@@ -169,7 +169,9 @@ public class TextEditor {
         try {
             if (colorServer != null && colorServer.isAlive())
                 colorServer.destroyForcibly();
-            colorServer = Runtime.getRuntime().exec("java -jar ../ColorServer/dist/ColorServer.jar");
+            colorServer = Runtime.getRuntime().exec(
+                    "java -jar ../ColorServer/dist/ColorServer.jar "
+                            + serverSocket.getLocalPort());
         } catch (IOException ex) {
             System.out.println("Failed to run the server, no colors. ex = " + ex.getMessage());
         }
@@ -216,7 +218,7 @@ public class TextEditor {
         });
 
         try {
-            serverSocket = new ServerSocket(6000);
+            serverSocket = new ServerSocket(0);
         } catch (IOException ex) {
             System.out.println("Can't open socket, exiting: " + ex.getMessage());
             return;

@@ -11,20 +11,22 @@ public class ColorServer {
         System.loadLibrary("libColor");
     }
 
+    private int connectionPort;
     private Socket clientSocket;
     private DataOutputStream out;
     private DataInputStream in;
     private Vector<String> documentPaths;
     private Vector<AtomicLong> currentRevisions;
 
-    public ColorServer() {
+    public ColorServer(int port) {
+        connectionPort = port;
         this.currentRevisions = new Vector<AtomicLong>();
         this.documentPaths = new Vector<String>();
     }
 
-    boolean connect(String ip, int port) {
+    boolean connect(String ip) {
         try {
-            clientSocket = new Socket(ip, port);
+            clientSocket = new Socket(ip, connectionPort);
             return true;
         } catch (IOException ex) {
             return false;
@@ -63,7 +65,7 @@ public class ColorServer {
     }
 
     public void start() {
-        while (!connect("127.0.0.1", 6000)) {}
+        while (!connect("127.0.0.1")) {}
         if (!initStreams()) {
             return;
         }
@@ -115,7 +117,7 @@ public class ColorServer {
     private static native void updateRevision(long revision);
 
     public static void main(String[] args) {
-        new ColorServer().start();
+        new ColorServer(Integer.parseInt(args[args.length - 1])).start();
     }
 
 }
