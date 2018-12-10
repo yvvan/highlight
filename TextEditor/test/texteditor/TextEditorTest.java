@@ -15,7 +15,10 @@ import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import static org.junit.Assert.*;
+import org.junit.FixMethodOrder;
+import org.junit.runners.MethodSorters;
 
+@FixMethodOrder(MethodSorters.NAME_ASCENDING)
 public class TextEditorTest {
     private static TextEditor textEditor;
 
@@ -59,25 +62,39 @@ public class TextEditorTest {
 
         textEditor.startReadingMessages();
     }
+ 
+    private class JUnitDocumentEditor extends TextDocumentEditor {
+        private byte[] lastColors;
+        public JUnitDocumentEditor(TextEditor parent, String path) {
+            super(parent, path);
+        }
+        
+        @Override
+        public void updateColors(long revision, int start, byte[] colors) {
+            lastColors = colors;
+        }
+        
+        public byte[] getLastColors() {
+            return lastColors;
+        }
+    }
 
-    private boolean waitForResponse(String str) {
-        // Ideally it should be Mock to handle this.
-        final AtomicBoolean called = new AtomicBoolean(false);
-        JTextPane text = textEditor.getFirstTextPane();
-        text.getDocument().addDocumentListener(new DocumentListener() {
-            @Override public void removeUpdate(DocumentEvent e) {}
-            @Override public void insertUpdate(DocumentEvent e) { }
-
-            @Override public void changedUpdate(DocumentEvent arg0) {
-                called.set(true);
-            }
-        });
-
-        text.setText(str);
-
+    @Test
+    public void testSendingMessage() {
+        textEditor.launchColorServer();
+        textEditor.startReadingMessages();
+        JUnitDocumentEditor documentEditor = new JUnitDocumentEditor(textEditor, "path");
+        textEditor.addDocumentEditor(documentEditor);
+        
+        documentEditor.textPane().setText("sometext");
+        
         int count = 0;
-        // Wait for 6 seconds in the worst case
-        while (called.get() == false && count < 6) {
+        while (count < 6) {
+            if (documentEditor.getLastColors() != null) {
+                textEditor.removeDocumentEditor(documentEditor);
+                return;
+            }
+            
             try {
                 Thread.sleep(1000);
             } catch (InterruptedException ex) {
@@ -86,41 +103,42 @@ public class TextEditorTest {
             ++count;
         }
 
-        text.setText("");
-        return called.get();
-    }
-
-    @Test
-    public void testSendingMessage() {
-        textEditor.launchColorServer();
-        textEditor.startReadingMessages();
-
-        if (!textEditor.hasDocumentEditor())
-            textEditor.addDocumentEditor("path");
-        boolean hasResponse = waitForResponse("anything");
-
-        assertTrue(hasResponse);
+        textEditor.removeDocumentEditor(documentEditor);
+        assertTrue(false);
     }
 
     @Test
     public void testColorsSimple() {
         textEditor.launchColorServer();
         textEditor.startReadingMessages();
-        if (!textEditor.hasDocumentEditor())
-            textEditor.addDocumentEditor("path");
-        JTextPane text = textEditor.getFirstTextPane();
-        waitForResponse("12345abcde");
+        JUnitDocumentEditor documentEditor = new JUnitDocumentEditor(textEditor, "path");
+        textEditor.addDocumentEditor(documentEditor);
+        
+        documentEditor.textPane().setText("12345abcde");
 
-        // TODO: test colors properly
-        for (int i = 0; i < 5; ++i) {
-            Element elem = text.getStyledDocument().getCharacterElement(i);
-            System.out.println(elem.getAttributes());
-            //assertTrue(text.getCharacterAttributes().getAttribute(StyleConstants.Foreground) == Color.BLUE);
+        int count = 0;
+        while (count < 6) {
+            if (documentEditor.getLastColors() != null) {
+                byte[] colors = documentEditor.getLastColors();
+                textEditor.removeDocumentEditor(documentEditor);
+                for (int i = 0; i < 5; ++i) {
+                    assertTrue(colors[i * 3] == 0 && colors[i * 3 + 1] == 0 && (colors[i * 3 + 2] & 0xFF) == 255);
+                }
+                for (int i = 5; i < 10; ++i) {
+                    assertTrue(colors[i * 3] == 0 && colors[i * 3 + 1] == 0 && colors[i * 3 + 2] == 0);
+                }
+                return;
+            }
+            
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException ex) {
+                Logger.getLogger(TextEditorTest.class.getName()).log(Level.SEVERE, null, ex);
+            }
+            ++count;
         }
-        for (int i = 5; i < 10; ++i) {
-            Element elem = text.getStyledDocument().getCharacterElement(i);
-            System.out.println(elem.getAttributes());
-            //assertTrue(text.getCharacterAttributes().getAttribute(StyleConstants.Foreground) == Color.BLACK);
-        }
+
+        textEditor.removeDocumentEditor(documentEditor);
+        assertTrue(false);
     }
 }

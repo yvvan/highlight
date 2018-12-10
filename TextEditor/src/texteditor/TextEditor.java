@@ -12,8 +12,8 @@ import java.net.*;
 import java.io.*;
 
 public class TextEditor {
-    private final static int MESSAGE_REQUEST = 0;
-    private final static int MESSAGE_CLOSE = 1;
+    public final static int MESSAGE_REQUEST = 0;
+    public final static int MESSAGE_CLOSE = 1;
 
     private JFrame frame;
     private ServerSocket serverSocket;
@@ -23,103 +23,20 @@ public class TextEditor {
     private boolean opened;
     private Process colorServer;
 
-    private class TextDocumentEditor {
-        private JTextPane text;
-        private String filePath;
-        private int offsetStart = 0;
-        private int offsetEnd = 0;
-        private long documentRevision = 0;
-        private int chunksSent = 0;
-
-        public TextDocumentEditor(String path) {
-            JTabbedPane tabbedPane = new JTabbedPane();
-            text = new JTextPane();
-            filePath = path;
-            JScrollPane jsp = new JScrollPane(text);
-            frame.add(tabbedPane);
-            tabbedPane.addTab(path, jsp);
-
-            text.getDocument().addDocumentListener(new DocumentListener() {
-                @Override
-                public void removeUpdate(DocumentEvent e) {
-                    ++documentRevision;
-                    mergeOffsets(e.getOffset(), e.getOffset() + e.getLength());
-                    sendRequest();
-                }
-
-                @Override
-                public void insertUpdate(DocumentEvent e) {
-                    ++documentRevision;
-                    mergeOffsets(e.getOffset(), e.getOffset() + e.getLength());
-                    sendRequest();
-                }
-
-                @Override public void changedUpdate(DocumentEvent arg0) {}
-            });
-        }
-
-        private void clearOffsets() {
-            offsetStart = 0;
-            offsetEnd = 0;
-        }
-
-        private void mergeOffsets(int start, int end) {
-            if (offsetEnd == 0) {
-                offsetStart = start;
-                offsetEnd = end;
-                return;
-            }
-            offsetStart = Math.min(offsetStart, start);
-            offsetEnd = Math.max(offsetEnd, end);
-        }
-
-        private void sendRequest() {
-            if (!opened) {
-                return;
-            }
-            try {
-                int start = 0;
-                int end = text.getDocument().getLength();
-                if (offsetEnd != 0) {
-                    start = offsetStart;
-                    end = Math.min(end, offsetEnd);
-                }
-
-                chunksSent = Math.max(0, end - start - 1) / 5000 + 1;
-                do {
-                    out.writeInt(MESSAGE_REQUEST);
-                    out.writeUTF(filePath);
-                    out.writeLong(documentRevision);
-                    out.writeInt(start);
-                    out.writeUTF(text.getDocument().getText(start, Math.min(5000, end - start)));
-                    start += 5000;
-                } while (end - start > 5000);
-            } catch (IOException | BadLocationException ex) {
-                System.out.println("Error sending request, retry. ex = " + ex.getMessage());
-                SwingUtilities.invokeLater(() -> { sendRequest(); });
-            }
-        }
-
-        // Must be called in Swing thread.
-        private void updateColors(long revision, int start, byte[] colors) {
-            if (revision < documentRevision) {
-                // We've already sent another request.
-                return;
-            }
-            --chunksSent;
-            if (chunksSent == 0) {
-                clearOffsets();
-            }
-            StyleContext sc = StyleContext.getDefaultStyleContext();
-            AttributeSet as = text.getCharacterAttributes();
-            for (int i = 0; i < colors.length / 3; ++i) {
-                as = sc.addAttribute(as,  StyleConstants.Foreground,
-                        new Color(colors[i * 3] & 0xFF,
-                                colors[i * 3 + 1] & 0xFF,
-                                colors[i * 3 + 2] & 0xFF));
-                text.getStyledDocument().setCharacterAttributes(start + i, 1, as, true);
-            }
-        }
+    public JFrame getFrame() {
+        return frame;
+    }
+    
+    public DataOutputStream getOutStream() {
+        return out;
+    }
+    
+    public DataInputStream getInStream() {
+        return in;
+    }
+    
+    public boolean isOpened() {
+        return opened;
     }
 
     private ArrayList<TextDocumentEditor> editors = new ArrayList<TextDocumentEditor>();
@@ -127,7 +44,7 @@ public class TextEditor {
     private void sendCloseRequest() {
         try {
             out.writeInt(MESSAGE_CLOSE);
-        } catch (IOException ex) {
+        } catch (IOException | NullPointerException ex) {
             System.out.println("Sending close message failed. " + ex.getMessage());
         }
     }
@@ -212,7 +129,7 @@ public class TextEditor {
             out.close();
             clientSocket.close();
             serverSocket.close();
-        } catch (IOException ex) {
+        } catch (IOException | NullPointerException ex) {
             System.out.println(ex.getMessage());
         }
     }
@@ -254,7 +171,7 @@ public class TextEditor {
 
         textEditor.startReadingMessages();
 
-        textEditor.addDocumentEditor("path");
+        textEditor.addDocumentEditor(new TextDocumentEditor(textEditor, "path"));
     }
 
     public void startReadingMessages() {
@@ -265,15 +182,15 @@ public class TextEditor {
         return !editors.isEmpty();
     }
 
-    public void addDocumentEditor(String path) {
-        editors.add(new TextDocumentEditor(path));
+    public void addDocumentEditor(TextDocumentEditor documentEditor) {
+        editors.add(documentEditor);
+    }
+    
+    public void removeDocumentEditor(TextDocumentEditor documentEditor) {
+        editors.remove(documentEditor);
     }
 
     public boolean isConnectionClosed() {
         return clientSocket == null || clientSocket.isClosed();
-    }
-
-    public JTextPane getFirstTextPane() {
-        return editors.get(0).text;
     }
 }
