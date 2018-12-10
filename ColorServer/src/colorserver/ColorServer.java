@@ -5,6 +5,8 @@ import java.util.concurrent.atomic.*;
 import java.util.Vector;
 import java.net.*;
 import java.io.*;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class ColorServer {
     static {
@@ -17,6 +19,8 @@ public class ColorServer {
     private DataInputStream in;
     private Vector<String> documentPaths;
     private Vector<AtomicLong> currentRevisions;
+    private final int MESSAGE_REQUEST = 0;
+    private final int MESSAGE_CLOSE = 1;
 
     public ColorServer(int port) {
         connectionPort = port;
@@ -71,11 +75,25 @@ public class ColorServer {
         }
         ExecutorService pool = Executors.newFixedThreadPool(4);
 
-        while (clientSocket.isConnected()) {
+        try {
+            clientSocket.setSoTimeout(2000);
+        } catch (SocketException ex) {
+            Logger.getLogger(ColorServer.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        while (!clientSocket.isClosed()) {
             int start;
             int index;
             String text;
             try {
+                int messageType = in.readInt();
+                if (messageType == MESSAGE_CLOSE) {
+                    break;
+                }
+                if (messageType != MESSAGE_REQUEST) {
+                    // Add here if we support one more message kind.
+                    break;
+                }
+
                 String documentPath = in.readUTF();
                 index = documentPaths.indexOf(documentPath);
                 if (index < 0) {
@@ -87,9 +105,12 @@ public class ColorServer {
                 }
                 start = in.readInt();
                 text = in.readUTF();
+            } catch (SocketTimeoutException ex) {
+                System.out.println("Timeout");
+                continue;
             } catch (IOException ex) {
                 System.out.println("Read failed, ex = " + ex.getMessage());
-                return;
+                break;
             }
 
             final long r = currentRevisions.elementAt(index).get();
