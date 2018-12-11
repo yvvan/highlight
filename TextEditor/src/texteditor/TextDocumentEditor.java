@@ -4,7 +4,6 @@ import java.awt.Color;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import javax.swing.JScrollPane;
-import javax.swing.JTabbedPane;
 import javax.swing.JTextPane;
 import javax.swing.SwingUtilities;
 import javax.swing.event.DocumentEvent;
@@ -25,12 +24,9 @@ public class TextDocumentEditor {
 
     public TextDocumentEditor(TextEditor parent, String path) {
         this.parent = parent;
-        JTabbedPane tabbedPane = new JTabbedPane();
         text = new JTextPane();
         filePath = path;
         JScrollPane jsp = new JScrollPane(text);
-        parent.getFrame().add(tabbedPane);
-        tabbedPane.addTab(path, jsp);
 
         text.getDocument().addDocumentListener(new DocumentListener() {
             @Override
@@ -86,8 +82,8 @@ public class TextDocumentEditor {
                 out.writeLong(documentRevision);
                 out.writeInt(start);
                 out.writeUTF(text.getDocument().getText(start, Math.min(5000, end - start)));
-                start += 5000;
-            } while (end - start > 5000);
+                start = start + 5000;
+            } while (end - start > 0);
         } catch (IOException | BadLocationException ex) {
             System.out.println("Error sending request, retry. ex = " + ex.getMessage());
             SwingUtilities.invokeLater(() -> { sendRequest(); });
@@ -114,7 +110,7 @@ public class TextDocumentEditor {
             text.getStyledDocument().setCharacterAttributes(start + i, 1, as, true);
         }
     }
-    
+
     public JTextPane textPane() {
         return text;
     }

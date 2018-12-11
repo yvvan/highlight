@@ -1,12 +1,9 @@
 package texteditor;
 
-import java.awt.Color;
 import java.awt.event.WindowEvent;
 import java.awt.event.WindowListener;
 import java.util.ArrayList;
 import javax.swing.*;
-import javax.swing.event.*;
-import javax.swing.text.*;
 
 import java.net.*;
 import java.io.*;
@@ -16,25 +13,23 @@ public class TextEditor {
     public final static int MESSAGE_CLOSE = 1;
 
     private JFrame frame;
+    private JTabbedPane tabbedPane;
     private ServerSocket serverSocket;
     private Socket clientSocket;
     private DataOutputStream out;
     private DataInputStream in;
     private boolean opened;
     private Process colorServer;
+    private Thread readingThread;
 
-    public JFrame getFrame() {
-        return frame;
-    }
-    
     public DataOutputStream getOutStream() {
         return out;
     }
-    
+
     public DataInputStream getInStream() {
         return in;
     }
-    
+
     public boolean isOpened() {
         return opened;
     }
@@ -66,10 +61,13 @@ public class TextEditor {
                     System.out.println("Can't read the header, restart" + ex.getMessage());
                     SwingUtilities.invokeLater(() -> {
                         launchColorServer();
-                        editors.get(0).sendRequest();
+                        startReadingMessages();
+                        if (!editors.isEmpty())
+                            editors.get(0).sendRequest();
                     });
-                    continue;
+                    return;
                 }
+
                 byte[] buffer = new byte[bufferSize];
                 int bufferOffset = 0;
                 try {
@@ -81,15 +79,18 @@ public class TextEditor {
                     System.out.println("Can't read buffer, restart: " + ex.getMessage());
                     SwingUtilities.invokeLater(() -> {
                         launchColorServer();
-                        editors.get(0).sendRequest();
+                        startReadingMessages();
+                        if (!editors.isEmpty())
+                            editors.get(0).sendRequest();
                     });
-                    continue;
+                    return;
                 }
 
                 final int startFinal = start;
                 final long revisionFinal = revision;
                 SwingUtilities.invokeLater(() -> {
-                    editors.get(0).updateColors(revisionFinal, startFinal, buffer);
+                    if (!editors.isEmpty())
+                        editors.get(0).updateColors(revisionFinal, startFinal, buffer);
                 });
             }
         }
@@ -129,15 +130,19 @@ public class TextEditor {
             out.close();
             clientSocket.close();
             serverSocket.close();
-        } catch (IOException | NullPointerException ex) {
+            if (readingThread != null)
+                readingThread.join();
+        } catch (IOException | NullPointerException | InterruptedException ex) {
             System.out.println(ex.getMessage());
         }
     }
 
     public TextEditor() {
+        tabbedPane = new JTabbedPane();
         frame = new JFrame("test window");
         frame.setSize(800, 600);
         frame.setVisible(true);
+        frame.add(tabbedPane);
 
         frame.addWindowListener(new WindowListener() {
             @Override public void windowClosing(WindowEvent e) {
@@ -175,7 +180,11 @@ public class TextEditor {
     }
 
     public void startReadingMessages() {
-        new Thread(new ReadingRunnable()).start();
+        if (!opened) {
+            return;
+        }
+        readingThread = new Thread(new ReadingRunnable());
+        readingThread.start();
     }
 
     public boolean hasDocumentEditor() {
@@ -184,9 +193,11 @@ public class TextEditor {
 
     public void addDocumentEditor(TextDocumentEditor documentEditor) {
         editors.add(documentEditor);
+        tabbedPane.add(documentEditor.textPane());
     }
-    
+
     public void removeDocumentEditor(TextDocumentEditor documentEditor) {
+        tabbedPane.remove(documentEditor.textPane());
         editors.remove(documentEditor);
     }
 
