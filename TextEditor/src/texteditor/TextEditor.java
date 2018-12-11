@@ -193,11 +193,11 @@ public class TextEditor {
 
     public void addDocumentEditor(TextDocumentEditor documentEditor) {
         editors.add(documentEditor);
-        tabbedPane.add(documentEditor.textPane());
+        tabbedPane.add(documentEditor.scrollPane());
     }
 
     public void removeDocumentEditor(TextDocumentEditor documentEditor) {
-        tabbedPane.remove(documentEditor.textPane());
+        tabbedPane.remove(documentEditor.scrollPane());
         editors.remove(documentEditor);
     }
 

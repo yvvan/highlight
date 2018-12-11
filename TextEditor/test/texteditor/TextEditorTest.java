@@ -3,6 +3,9 @@ package texteditor;
 import java.util.Vector;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import javax.swing.text.BadLocationException;
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
@@ -10,6 +13,7 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 import static org.junit.Assert.*;
 import org.junit.FixMethodOrder;
+import org.junit.Ignore;
 import org.junit.runners.MethodSorters;
 
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
@@ -74,6 +78,7 @@ public class TextEditorTest {
 
         @Override
         public void updateColors(long revision, int start, byte[] colors) {
+            super.updateColors(revision, start, colors);
             int colorsStart = start * 3;
             if (colorsStart + colors.length > lastColors.size()) {
                 lastColors.setSize(colorsStart + colors.length);
@@ -88,10 +93,10 @@ public class TextEditorTest {
         }
     }
 
-    private boolean waitForColors(JUnitDocumentEditor documentEditor, int colorsAmount, int seconds) {
+    private boolean waitForAllMessages(JUnitDocumentEditor documentEditor, int seconds) {
         int count = 0;
         while (count < seconds) {
-            if (documentEditor.getLastColors().size() == colorsAmount) {
+            if (documentEditor.areRangesEmpty()) {
                 return true;
             }
 
@@ -113,7 +118,7 @@ public class TextEditorTest {
 
         documentEditor.textPane().setText("sometext");
 
-        boolean colorsReceived = waitForColors(documentEditor, 8 * 3, 10);
+        boolean colorsReceived = waitForAllMessages(documentEditor, 10);
         textEditor.removeDocumentEditor(documentEditor);
         assertTrue(colorsReceived);
     }
@@ -127,7 +132,7 @@ public class TextEditorTest {
 
         documentEditor.textPane().setText("12345abcde");
 
-        boolean colorsReceived = waitForColors(documentEditor, 10 * 3, 10);
+        boolean colorsReceived = waitForAllMessages(documentEditor, 10);
         Vector<Byte> colors = documentEditor.getLastColors();
         textEditor.removeDocumentEditor(documentEditor);
         assertTrue(colorsReceived);
@@ -152,8 +157,57 @@ public class TextEditorTest {
         }
         documentEditor.textPane().setText(testText.toString());
 
-        boolean colorsReceived = waitForColors(documentEditor, 50000 * 3, 20);
+        boolean colorsReceived = waitForAllMessages(documentEditor, 20);
         textEditor.removeDocumentEditor(documentEditor);
         assertTrue(colorsReceived);
+    }
+
+    @Test
+    public void test6MultipleMessages() {
+        textEditor.launchColorServer();
+        textEditor.startReadingMessages();
+        JUnitDocumentEditor documentEditor = new JUnitDocumentEditor(textEditor, "path");
+        textEditor.addDocumentEditor(documentEditor);
+
+        StringBuilder testText = new StringBuilder();
+        for (int i = 0; i < 50000; ++i) {
+            testText.append('1');
+        }
+        try {
+            documentEditor.textPane().getStyledDocument().insertString(0, testText.toString(), null);
+            // Not reliable, but sometimes triggers in between messages.
+            Thread.sleep(500);
+            documentEditor.textPane().getStyledDocument().insertString(100, testText.toString(), null);
+        } catch (BadLocationException | InterruptedException ex) {
+        }
+
+        boolean colorsReceived = waitForAllMessages(documentEditor, 20);
+        textEditor.removeDocumentEditor(documentEditor);
+        assertTrue(colorsReceived);
+    }
+
+    @Test
+    public void test7MultipleSimpleMessages() {
+        textEditor.launchColorServer();
+        textEditor.startReadingMessages();
+        JUnitDocumentEditor documentEditor = new JUnitDocumentEditor(textEditor, "path");
+        textEditor.addDocumentEditor(documentEditor);
+
+        try {
+            documentEditor.textPane().setText("abcdh");
+            documentEditor.textPane().getStyledDocument().insertString(0, "11111", null);
+        } catch (BadLocationException ex) {
+        }
+
+        boolean colorsReceived = waitForAllMessages(documentEditor, 10);
+        Vector<Byte> colors = documentEditor.getLastColors();
+        textEditor.removeDocumentEditor(documentEditor);
+        assertTrue(colorsReceived);
+        for (int i = 0; i < 5; ++i) {
+            assertTrue(colors.get(i * 3) == 0 && colors.get(i * 3 + 1) == 0 && (colors.get(i * 3 + 2) & 0xFF) == 255);
+        }
+        for (int i = 5; i < 10; ++i) {
+            assertTrue(colors.get(i * 3) == 0 && colors.get(i * 3 + 1) == 0 && colors.get(i * 3 + 2) == 0);
+        }
     }
 }
