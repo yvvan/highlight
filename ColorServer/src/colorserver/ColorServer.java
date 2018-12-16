@@ -19,8 +19,8 @@ public class ColorServer {
     private DataInputStream in;
     private Vector<String> documentPaths;
     private Vector<AtomicLong> currentRevisions;
-    private final int MESSAGE_REQUEST = 0;
-    private final int MESSAGE_CLOSE = 1;
+    public final static int MESSAGE_REQUEST = 0;
+    public final static int MESSAGE_CLOSE = 1;
 
     public ColorServer(int port) {
         connectionPort = port;

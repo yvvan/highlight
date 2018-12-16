@@ -21,7 +21,7 @@ public class TextDocumentEditor {
     private JScrollPane scrollArea;
     private JTextPane text;
     private String filePath;
-    private class Range implements Comparable<Integer> {
+    public class Range implements Comparable<Integer> {
         public int start;
         public int end;
 
@@ -42,17 +42,19 @@ public class TextDocumentEditor {
         }
 
     }
-    private ArrayList<Range> ranges = new ArrayList<Range>();
-    private long documentRevision = 0;
+    private ArrayList<Range> ranges;
+    private long documentRevision;
 
     private void printRanges() {
-        for (int i = 0; i < ranges.size(); ++i) {
-            System.out.print(ranges.get(i).start + "," + ranges.get(i).end + "; ");
-        }
-        System.out.println();
+//        for (int i = 0; i < ranges.size(); ++i) {
+//            System.out.print(ranges.get(i).start + "," + ranges.get(i).end + "; ");
+//        }
+//        System.out.println();
     }
 
     public TextDocumentEditor(TextEditor parent, String path) {
+        this.documentRevision = 0;
+        this.ranges = new ArrayList<Range>();
         this.parent = parent;
         text = new JTextPane();
         filePath = path;
@@ -79,7 +81,7 @@ public class TextDocumentEditor {
         });
     }
 
-    private void removeRange(int start, int end) {
+    public void removeRange(int start, int end) {
         int startIndex = Collections.binarySearch(ranges, start);
         int endIndex = Collections.binarySearch(ranges, end);
         if (startIndex >= 0 && startIndex == endIndex) {
@@ -126,7 +128,7 @@ public class TextDocumentEditor {
         printRanges();
     }
 
-    private void addRange(int start, int end) {
+    public void addRange(int start, int end) {
         int startIndex = Collections.binarySearch(ranges, start);
         int endIndex = Collections.binarySearch(ranges, end);
 
@@ -152,17 +154,28 @@ public class TextDocumentEditor {
         printRanges();
     }
 
-    private void shiftRanges(int start, int shift) {
-        for (Range range : ranges) {
+    public void shiftRanges(int start, int shift) {
+        for (int i = 0; i < ranges.size(); ++i) {
+            Range range = ranges.get(i);
             if (start <= range.start) {
                 range.start += shift;
             }
             if (start < range.end) {
                 range.end += shift;
             }
+            if (i > 0 && ranges.get(i - 1).end == range.start) {
+                // We have to merge it with the previous one.
+                ranges.get(i - 1).end = range.end;
+                ranges.remove(i);
+                --i;
+            }
         }
 
         printRanges();
+    }
+
+    public ArrayList<Range> getRanges() {
+        return ranges;
     }
 
     private void splitTooLongChunks(ArrayList<Range> toSend, int maxSize) {

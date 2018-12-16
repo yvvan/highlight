@@ -204,4 +204,8 @@ public class TextEditor {
     public boolean isConnectionClosed() {
         return clientSocket == null || clientSocket.isClosed();
     }
+
+    public boolean hasColorServer() {
+        return colorServer != null;
+    }
 }

@@ -1,5 +1,6 @@
 package texteditor;
 
+import java.util.ArrayList;
 import java.util.Vector;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -42,6 +43,9 @@ public class TextEditorTest {
     @After
     public void tearDown() {
         textEditor.disconnect();
+        if (!textEditor.hasColorServer()) {
+            return;
+        }
 
         // Give some time to the server to finish.
         try {
@@ -49,6 +53,265 @@ public class TextEditorTest {
         } catch (InterruptedException ex) {
         }
         sequential.unlock();
+    }
+
+    @Test
+    public void test001RangesBasic() {
+        TextDocumentEditor editor = new TextDocumentEditor(null, "");
+
+        editor.addRange(0, 10);
+
+        TextDocumentEditor.Range range = editor.getRanges().get(0);
+        assertTrue(range.start == 0);
+        assertTrue(range.end == 10);
+    }
+
+    @Test
+    public void test002RangesAddTwice() {
+        TextDocumentEditor editor = new TextDocumentEditor(null, "");
+        editor.addRange(20, 30);
+
+        editor.addRange(0, 10);
+
+        assertTrue(editor.getRanges().size() == 2);
+        TextDocumentEditor.Range range = editor.getRanges().get(0);
+        assertTrue(range.start == 0);
+        assertTrue(range.end == 10);
+    }
+
+    @Test
+    public void test003RangesAddConnected() {
+        TextDocumentEditor editor = new TextDocumentEditor(null, "");
+        editor.addRange(10, 20);
+
+        editor.addRange(0, 10);
+
+        assertTrue(editor.getRanges().size() == 1);
+        TextDocumentEditor.Range range = editor.getRanges().get(0);
+        assertTrue(range.start == 0);
+        assertTrue(range.end == 20);
+    }
+
+    @Test
+    public void test004RangesRemoveBeginning() {
+        TextDocumentEditor editor = new TextDocumentEditor(null, "");
+        editor.addRange(0, 20);
+
+        editor.removeRange(0, 5);
+
+        assertTrue(editor.getRanges().size() == 1);
+        TextDocumentEditor.Range range = editor.getRanges().get(0);
+        assertTrue(range.start == 5);
+        assertTrue(range.end == 20);
+    }
+
+    @Test
+    public void test005RangesRemoveEnd() {
+        TextDocumentEditor editor = new TextDocumentEditor(null, "");
+        editor.addRange(0, 20);
+        editor.removeRange(15, 20);
+
+        assertTrue(editor.getRanges().size() == 1);
+        TextDocumentEditor.Range range = editor.getRanges().get(0);
+        assertTrue(range.start == 0);
+        assertTrue(range.end == 15);
+    }
+
+    @Test
+    public void test006RangesRemoveMiddle() {
+        TextDocumentEditor editor = new TextDocumentEditor(null, "");
+        editor.addRange(0, 20);
+
+        editor.removeRange(10, 15);
+
+        assertTrue(editor.getRanges().size() == 2);
+        TextDocumentEditor.Range range = editor.getRanges().get(0);
+        assertTrue(range.start == 0);
+        assertTrue(range.end == 10);
+    }
+
+    @Test
+    public void test007RangesRemoveAll() {
+        TextDocumentEditor editor = new TextDocumentEditor(null, "");
+        editor.addRange(0, 20);
+
+        editor.removeRange(0, 20);
+
+        assertTrue(editor.getRanges().isEmpty());
+    }
+
+    @Test
+    public void test008RangesRemoveMoreThanExists() {
+        TextDocumentEditor editor = new TextDocumentEditor(null, "");
+        editor.addRange(10, 20);
+
+        editor.removeRange(0, 20);
+
+        assertTrue(editor.getRanges().isEmpty());
+    }
+
+    @Test
+    public void test009RangesAddToConnect() {
+        TextDocumentEditor editor = new TextDocumentEditor(null, "");
+        editor.addRange(10, 20);
+        editor.addRange(30, 40);
+
+        editor.addRange(20, 35);
+
+        assertTrue(editor.getRanges().size() == 1);
+        TextDocumentEditor.Range range = editor.getRanges().get(0);
+        assertTrue(range.start == 10);
+        assertTrue(range.end == 40);
+    }
+
+    @Test
+    public void test010RangesAddSwallowInside() {
+        TextDocumentEditor editor = new TextDocumentEditor(null, "");
+        editor.addRange(0, 10);
+        editor.addRange(20, 30);
+
+        editor.addRange(15, 40);
+
+        assertTrue(editor.getRanges().size() == 2);
+        TextDocumentEditor.Range range = editor.getRanges().get(1);
+        assertTrue(range.start == 15);
+        assertTrue(range.end == 40);
+    }
+
+    @Test
+    public void test011RangesRemove() {
+        TextDocumentEditor editor = new TextDocumentEditor(null, "");
+        editor.addRange(0, 10);
+        editor.addRange(20, 30);
+
+        editor.addRange(15, 40);
+
+        assertTrue(editor.getRanges().size() == 2);
+        TextDocumentEditor.Range range = editor.getRanges().get(1);
+        assertTrue(range.start == 15);
+        assertTrue(range.end == 40);
+    }
+
+    @Test
+    public void test012RangesRemoveAll() {
+        TextDocumentEditor editor = new TextDocumentEditor(null, "");
+        editor.addRange(0, 10);
+        editor.addRange(20, 30);
+
+        editor.removeRange(0, 30);
+
+        assertTrue(editor.getRanges().isEmpty());
+    }
+
+    @Test
+    public void test013RangesShiftAndAdd() {
+        TextDocumentEditor editor = new TextDocumentEditor(null, "");
+        editor.addRange(20, 30);
+
+        editor.shiftRanges(20, 5);
+        editor.addRange(20, 25);
+
+        assertTrue(editor.getRanges().size() == 1);
+        TextDocumentEditor.Range range = editor.getRanges().get(0);
+        assertTrue(range.start == 20);
+        assertTrue(range.end == 35);
+    }
+
+    @Test
+    public void test014RangesRemoveAndShift() {
+        TextDocumentEditor editor = new TextDocumentEditor(null, "");
+        editor.addRange(20, 30);
+
+        editor.removeRange(25, 26);
+        editor.shiftRanges(26, -1);
+
+        assertTrue(editor.getRanges().size() == 1);
+        TextDocumentEditor.Range range = editor.getRanges().get(0);
+        assertTrue(range.start == 20);
+        assertTrue(range.end == 29);
+    }
+
+    @Test
+    public void test015RangesComplexExample() {
+        TextDocumentEditor editor = new TextDocumentEditor(null, "");
+        editor.addRange(0, 905);
+
+        editor.shiftRanges(393, 90);
+        editor.addRange(393, 483);
+        //0, 995
+        assertTrue(editor.getRanges().size() == 1);
+
+        editor.removeRange(729, 832);
+        //0, 729 and 832, 995
+        editor.shiftRanges(832, -103);
+        //0, 892
+
+        assertTrue(editor.getRanges().size() == 1);
+        TextDocumentEditor.Range range = editor.getRanges().get(0);
+        assertTrue(range.start == 0);
+        assertTrue(range.end == 892);
+    }
+
+    private boolean checkRanges(ArrayList<TextDocumentEditor.Range> ranges) {
+        for (int i = 0; i < ranges.size(); ++i) {
+            TextDocumentEditor.Range currentRange = ranges.get(i);
+            if (currentRange.end <= currentRange.start) {
+                System.out.println("Wrong range is " + currentRange.start + " , " + currentRange.end);
+                return false;
+            }
+
+            if (i > 0 && currentRange.start <= ranges.get(i - 1).end) {
+                System.out.println("Wrong ranges are " + currentRange.start + " , " + currentRange.end
+                    + " and " + ranges.get(i - 1).start + ", " + ranges.get(i - 1).end);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void printLog(ArrayList<TextDocumentEditor.Range> ranges) {
+        System.out.println("List of operations:");
+        for (TextDocumentEditor.Range range : ranges) {
+            if (range.start < 0) {
+                System.out.println("Remove " + (- range.start - 1) + ", " + range.end);
+            } else {
+                System.out.println("Insert " + range.start + ", " + range.end);
+            }
+        }
+    }
+
+    @Test
+    public void test016RangesRandom() {
+        TextDocumentEditor editor = new TextDocumentEditor(null, "");
+        int documentLength = 0;
+        ArrayList<TextDocumentEditor.Range> log = new ArrayList<TextDocumentEditor.Range>();
+        for (int i = 0; i < 100000; ++i) {
+            boolean operation = (Math.round(Math.random()) == 0);
+            int pos = (int)(Math.random() * documentLength);
+            int length = 1;
+            if (operation) {
+                // Insert.
+                length = (int) (Math.random() * 1000);
+                editor.shiftRanges(pos, length);
+                editor.addRange(pos, pos + length);
+                documentLength += length;
+            } else {
+                //Remove, limit by the text size.
+                length = (int)(Math.random() * (documentLength - pos));
+                editor.removeRange(pos, pos + length);
+                editor.shiftRanges(pos + length, -length);
+                documentLength -= length;
+            }
+            TextDocumentEditor.Range range = editor.new Range();
+            range.start = operation ? pos : (- pos - 1);
+            range.end = pos + length;
+            log.add(range);
+
+            if (!checkRanges(editor.getRanges())) {
+                printLog(log);
+                assertTrue(false);
+            }
+        }
     }
 
     @Test
